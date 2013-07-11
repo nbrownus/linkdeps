@@ -1,0 +1,19 @@
+{
+    "name": "linkdeps"
+  , "version": "0.0.1"
+  , "description": "Replaces all package.json dependencies with symlinks to global versioned folders"
+  , "keywords": [
+    ]
+  , "author": {
+        "name": "Nathan Brown"
+      , "email": "nbrown.us@gmail.com"
+    }
+  , "license": "MIT"
+  , "engines": {
+        "node": ">= 0.8.x"
+    }
+  , "dependencies": {
+        "mkdirp": "0.3.5"
+      , "dashdash": "1.3.2"
+    }
+}

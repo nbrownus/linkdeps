@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+
+var dashdash = require('dashdash')
+  , globalCacheDir = '/usr/local/share/npm/linkdeps' //TODO: default to `npm config get prefix` or something better?
+  , path = require('path')
+  , fs = require('fs')
+  , util = require('util')
+
+var optParser = new dashdash.Parser({
+    options: [
+        {
+            names: ['help', 'h']
+          , type: 'bool'
+          , help: 'Print this help and exit'
+        }
+      , {
+            names: ['dry-run', 'd']
+          , type: 'bool'
+          , help: 'Will not actually make changes but print the changes that would have been made'
+        }
+      , {
+            names: ['cachedir', 'c']
+          , type: 'string'
+          , help: 'Global directory to place the canonical dependency source, defaults to `npm config get prefix`/linkdeps'
+          , env: 'LINKDEPS_CACHE_DIR'
+          , helpArg: '<path>'
+        }
+      , {
+            names: ['npm']
+          , type: 'string'
+          , help: 'Path to npm, defaults to /usr/local/bin/npm'
+          , default: '/usr/local/bin/npm'
+          , env: 'NPM_CONFIG_PREFIX'
+          , helpArg: '<path>'
+        }
+    ]
+})
+
+try {
+    var opts = optParser.parse(process.argv)
+} catch (error) {
+    printHelp(error.message)
+}
+
+if (opts.help) {
+    printHelp()
+}
+
+//Discover all package.json files
+var pathRegex = new RegExp('(package\\.json)$')
+  , testPaths = opts._args
+  , files = []
+
+if (!testPaths.length) {
+    testPaths.push('.')
+}
+
+try {
+    testPaths.forEach(function (testPath) {
+        files = files.concat(lookupFiles(testPath, true))
+    })
+
+} catch (error) {
+    if (error.code === 'ENOENT') {
+        error = 'No such file or directory: ' + error.path
+    } else {
+        error = error.message
+    }
+
+    console.error(error)
+    process.exit(1)
+}
+
+//TODO: Switch to using read-package-json?
+files.forEach(function (filePath) {
+    var actualPath = path.resolve(filePath)
+      , pkgDir = path.dirname(actualPath)
+      , pkg = require(actualPath)
+      , dependencies = pkg.dependencies || {} //TODO: Handle devDependencies only for the top level?
+
+    console.log(pkgDir)
+
+//    Object.keys(dependencies).forEach(function (depModule) {
+//        module.paths.unshift(path.join(pkgDir, 'node_modules'))
+//        console.log(module)
+//        console.log(require.resolve(depModule))
+//        module.paths.shift()
+//        var moduleDir = path.join(pkgDir, 'node_modules', depModule)
+//
+//        if (fs.existsSync(moduleDir) && fs.statSync(moduleDir).isDirectory()) {
+//            //TODO: Check if we have a better version already that matches our semver
+//
+//            var modulePkg = require(path.join(moduleDir, 'package.json'))
+//            var destination = path.join(globalCacheDir, depModule, modulePkg.version)
+//
+//            if (fs.existsSync(destination) && fs.statSync(destination).isDirectory()) {
+//                console.log('Removing destination dir "' + destination + '"')
+//            } else {
+//                console.log('Making destination dir "' + destination + '"')
+//            }
+//
+//            console.log('Moving source dir "' + moduleDir + '" -> "' + destination + '"')
+//            console.log('Linking module dir "' + destination + '" -> "' + moduleDir + '"')
+//        } else {
+//            //TODO: Module is provided above us, handle it
+//        }
+//    })
+})
+
+/**
+ * Looks up files within a path, optionally recursively
+ *
+ * @param {String} filePath The file path to search
+ * @param {Boolean} recursive Whether or not to recurse into directories found within a filePath
+ *
+ * @returns {Array.<String>} An array of files found within filePath
+ */
+function lookupFiles (filePath, recursive) {
+    var found = []
+
+    var stat = fs.statSync(filePath)
+    if (stat.isFile()) {
+        return [filePath]
+    }
+
+    fs.readdirSync(filePath).forEach(function (file) {
+        file = path.join(filePath, file)
+        var stat = fs.statSync(file)
+        if (stat.isDirectory()) {
+            if (recursive) {
+                found = found.concat(lookupFiles(file, recursive))
+            }
+
+            return
+        }
+
+        if (!stat.isFile() || !pathRegex.test(file) || path.basename(file)[0] == '.') {
+            return
+        }
+
+        found.push(file)
+    })
+
+    return found
+}
+
+/**
+ * Prints the help and optionally an error
+ *
+ * @param {String} [error] An error message to print before the help
+ */
+function printHelp (error) {
+    var status = 0
+
+    if (error) {
+        console.error(error)
+        console.log()
+        status = 1
+    }
+    var width = (process.stdout.getWindowSize) ? process.stdout.getWindowSize()[0] : 120
+
+    //TODO: need $0
+    console.log('Usage: linkdeps [OPTIONS] [<files/directories>...]\n')
+    console.log('Options:')
+    console.log(optParser.help({ includeEnv: true, maxCol: width }).trimRight())
+
+    process.exit(status)
+}
